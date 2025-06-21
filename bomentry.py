@@ -12,7 +12,7 @@ class BomEntryForm(tk.Toplevel):
         self.geometry("900x600")
         self.resizable(True, True)
         self.configure(bg='#f0f0f0')
-        
+
         # Style configuration
         self.style = ttk.Style()
         self.style.configure('TFrame', background='#f0f0f0')
@@ -21,34 +21,167 @@ class BomEntryForm(tk.Toplevel):
         self.style.configure('TCombobox', font=('Arial', 10))
         self.style.configure('TNotebook', background='#f0f0f0')
         self.style.configure('TNotebook.Tab', font=('Arial', 10, 'bold'))
-        
+
+        # Status bar - create this BEFORE tabs and data loading!
+        self.status_bar = ttk.Label(self, text="Ready", relief=tk.SUNKEN)
+        self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+
         # Database connection
         self.db = self.connect_to_database()
         self.available_colors = self.fetch_available_colors() if self.db else []
-        
+
         # Variables
         self.table_data = []
         self.used_colors = []
         self.selected_bh_id = None
-        
+
         # Create main container
         self.main_frame = ttk.Frame(self)
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Create tabbed interface
+
+        # Create tabbed interface (which calls load_all_boms)
         self.create_tabbed_interface()
-        
-        # Status bar
-        self.status_bar = ttk.Label(self, text="Ready", relief=tk.SUNKEN)
-        self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
-        
+
+
+# Adding the add_base_color method to handle adding base colors
+# Adding insert data method to handle inserting BOM data
+# Adding clear_entries method to clear form fields
+
+    def add_base_color(self):
+        """Add a base color and its percentage to the table in Insert tab"""
+        base_color = self.base_color_combobox.get().strip()
+        percentage_str = self.percentage_entry.get().strip()
+
+        # Clear previous error message
+        self.error_label.config(text="")
+
+        if not base_color:
+            self.error_label.config(text="Please select a base color.")
+            return
+        if not percentage_str.isdigit():
+            self.error_label.config(text="Percentage must be a positive integer.")
+            return
+
+        percentage = int(percentage_str)
+        if percentage <= 0 or percentage > 100:
+            self.error_label.config(text="Percentage must be between 1 and 100.")
+            return
+
+        # Check if this base color is already added
+        for child in self.base_tree.get_children():
+            existing_color = self.base_tree.item(child)['values'][0]
+            if existing_color == base_color:
+                self.error_label.config(text=f"Base color '{base_color}' is already added.")
+                return
+
+        # Calculate total percentage if added
+        current_total = 0
+        for child in self.base_tree.get_children():
+            current_total += int(self.base_tree.item(child)['values'][1])
+        new_total = current_total + percentage
+
+        if new_total > 100:
+            self.error_label.config(text=f"Total percentage cannot exceed 100%. Current total is {current_total}%.")
+            return
+
+        # Add to treeview
+        self.base_tree.insert('', tk.END, values=(base_color, percentage))
+
+        # Update total percentage label
+        self.total_percentage.config(text=f"Total: {new_total}%")
+
+        # Clear inputs
+        self.base_color_combobox.set('')
+        self.percentage_entry.delete(0, tk.END)
+
+    def insert_data(self):
+        """Insert new BOM into the database with its details"""
+        final_color = self.final_color_entry.get().strip()
+        date_value = self.date_entry.get_date()
+        base_colors = []
+
+        # Clear error label
+        self.error_label.config(text="")
+
+        if not final_color:
+            self.error_label.config(text="Final color cannot be empty.")
+            return
+
+        # Collect base colors and percentages from the treeview
+        for child in self.base_tree.get_children():
+            color, percent = self.base_tree.item(child)['values']
+            base_colors.append((color, int(percent)))
+
+        if not base_colors:
+            self.error_label.config(text="Add at least one base color.")
+            return
+
+        # Check total percentage must be exactly 100%
+        total_percentage = sum(p for _, p in base_colors)
+        if total_percentage != 100:
+            self.error_label.config(text=f"Total percentage must be exactly 100%. Current total: {total_percentage}%.")
+            return
+
+        try:
+            cursor = self.db.cursor()
+
+            # Generate new BH_ID like B000, B001, etc.
+            cursor.execute("SELECT MAX(BH_ID) FROM BOMHeading")
+            result = cursor.fetchone()
+            if result[0] is None:
+                new_bh_id = "B000"
+            else:
+                max_id = result[0]
+                max_num = int(max_id[1:])  # Remove leading letter
+                new_bh_id = f"B{max_num + 1:03d}"
+
+            # Insert BOM heading
+            cursor.execute(
+                "INSERT INTO BOMHeading (BH_ID, FinalColor, Date) VALUES (%s, %s, %s)",
+                (new_bh_id, final_color, date_value)
+            )
+
+            # Insert BOM details
+            for color, percent in base_colors:
+                cursor.execute(
+                    "INSERT INTO BOMDetail (BH_ID, BaseColor, Percentage) VALUES (%s, %s, %s)",
+                    (new_bh_id, color, percent)
+                )
+
+            self.db.commit()
+            messagebox.showinfo("Success", f"BOM '{final_color}' inserted successfully with ID {new_bh_id}.")
+
+            # Clear form and treeview
+            self.clear_entries()
+            self.load_all_boms()  # Refresh BOM list view
+        except Error as e:
+            self.db.rollback()
+            messagebox.showerror("Database Error", f"Failed to insert BOM: {e}")
+        finally:
+            if cursor:
+                cursor.close()
+
+    def clear_entries(self):
+        """Clear all input fields and treeview in Insert tab"""
+        self.final_color_entry.delete(0, tk.END)
+        self.date_entry.set_date(datetime.today())
+        self.base_color_combobox.set('')
+        self.percentage_entry.delete(0, tk.END)
+        for item in self.base_tree.get_children():
+            self.base_tree.delete(item)
+        self.total_percentage.config(text="Total: 0%")
+        self.error_label.config(text="")
+
+
+
+
     def connect_to_database(self):
         """Establish database connection"""
         try:
             return mysql.connector.connect(
                 host='localhost',
                 user='minkhanttun',
-                password='your_password',
+                password='29112000',
                 database='mkt'
             )
         except Error as e:
@@ -151,7 +284,7 @@ class BomEntryForm(tk.Toplevel):
         
         # Configure accent button style
         self.style.configure('Accent.TButton', foreground='white', background='#0078d7')
-    
+   
     def setup_edit_tab(self):
         """Setup the edit tab"""
         # Header
@@ -291,6 +424,160 @@ class BomEntryForm(tk.Toplevel):
         finally:
             if cursor:
                 cursor.close()
+
+    def load_data_for_edit(self):
+        bh_id = self.id_entry.get().strip()
+        if not bh_id:
+            messagebox.showwarning("Input Error", "Please enter a BOM ID to search.")
+            return
+
+        try:
+            cursor = self.db.cursor()
+            # Fetch BOM heading info
+            cursor.execute("SELECT FinalColor, Date FROM BOMHeading WHERE BH_ID = %s", (bh_id,))
+            result = cursor.fetchone()
+            if not result:
+                messagebox.showinfo("Not Found", f"No BOM found with ID {bh_id}.")
+                return
+            
+            final_color, date_value = result
+            self.edit_final_color_entry.delete(0, tk.END)
+            self.edit_final_color_entry.insert(0, final_color)
+            self.edit_date_entry.set_date(date_value)
+
+            # Fetch BOM details (base colors)
+            cursor.execute("SELECT BaseColor, Percentage FROM BOMDetail WHERE BH_ID = %s", (bh_id,))
+            rows = cursor.fetchall()
+
+            # Clear old items in edit tree
+            for item in self.edit_base_tree.get_children():
+                self.edit_base_tree.delete(item)
+
+            total_percentage = 0
+            for base_color, percent in rows:
+                self.edit_base_tree.insert('', tk.END, values=(base_color, percent))
+                total_percentage += percent
+
+            self.edit_total_percentage.config(text=f"Total: {total_percentage}%")
+            self.selected_bh_id = bh_id
+            self.status_bar.config(text=f"Loaded BOM {bh_id} for editing.")
+
+        except Error as e:
+            messagebox.showerror("Database Error", f"Failed to load BOM data: {e}")
+        finally:
+            if cursor:
+                cursor.close()
+
+
+    def update_data(self):
+        if not self.selected_bh_id:
+            messagebox.showerror("Error", "No BOM selected for update.")
+            return
+
+        final_color = self.edit_final_color_entry.get().strip()
+        date_value = self.edit_date_entry.get_date()
+        base_colors = []
+
+        # Validate inputs
+        if not final_color:
+            messagebox.showerror("Validation Error", "Final color cannot be empty.")
+            return
+
+        for child in self.edit_base_tree.get_children():
+            color, percent = self.edit_base_tree.item(child)['values']
+            base_colors.append((color, int(percent)))
+
+        if not base_colors:
+            messagebox.showerror("Validation Error", "Add at least one base color.")
+            return
+
+        total_percentage = sum(p for _, p in base_colors)
+        if total_percentage != 100:
+            messagebox.showerror("Validation Error", f"Total percentage must be exactly 100%. Current total: {total_percentage}%.")
+            return
+
+        try:
+            cursor = self.db.cursor()
+            # Update BOMHeading
+            cursor.execute(
+                "UPDATE BOMHeading SET FinalColor=%s, Date=%s WHERE BH_ID=%s",
+                (final_color, date_value, self.selected_bh_id)
+            )
+
+            # Delete existing details
+            cursor.execute(
+                "DELETE FROM BOMDetail WHERE BH_ID=%s",
+                (self.selected_bh_id,)
+            )
+
+            # Insert new details
+            for color, percent in base_colors:
+                cursor.execute(
+                    "INSERT INTO BOMDetail (BH_ID, BaseColor, Percentage) VALUES (%s, %s, %s)",
+                    (self.selected_bh_id, color, percent)
+                )
+
+            self.db.commit()
+            messagebox.showinfo("Success", f"BOM '{self.selected_bh_id}' updated successfully.")
+            self.load_all_boms()
+            self.clear_edit_tab()
+        except Error as e:
+            self.db.rollback()
+            messagebox.showerror("Database Error", f"Failed to update BOM: {e}")
+        finally:
+            if cursor:
+                cursor.close()
+
+    def clear_edit_tab(self):
+        self.selected_bh_id = None
+        self.id_entry.delete(0, tk.END)
+        self.edit_final_color_entry.delete(0, tk.END)
+        self.edit_date_entry.set_date(datetime.today())
+        for item in self.edit_base_tree.get_children():
+            self.edit_base_tree.delete(item)
+        self.edit_total_percentage.config(text="Total: 0%")
+
+
+    def search_boms(self):
+        search_term = self.search_entry.get().strip()
+        try:
+            cursor = self.db.cursor()
+            query = """
+                SELECT BH_ID, FinalColor, Date 
+                FROM BOMHeading 
+                WHERE BH_ID LIKE %s OR FinalColor LIKE %s
+                ORDER BY Date DESC
+            """
+            like_term = f"%{search_term}%"
+            cursor.execute(query, (like_term, like_term))
+
+            # Clear existing items
+            for item in self.boms_tree.get_children():
+                self.boms_tree.delete(item)
+
+            # Add filtered results
+            for row in cursor.fetchall():
+                self.boms_tree.insert('', tk.END, values=row)
+
+            self.status_bar.config(text=f"Search results: {len(self.boms_tree.get_children())} BOM(s) found")
+        except Error as e:
+            messagebox.showerror("Database Error", f"Failed to search BOMs: {e}")
+        finally:
+            if cursor:
+                cursor.close()
+
+
+    def edit_selected_bom(self, event):
+        selected_item = self.boms_tree.selection()
+        if not selected_item:
+            return
+        item = self.boms_tree.item(selected_item)
+        bh_id = item['values'][0]  # Assuming BH_ID is the first column
+        self.notebook.select(self.edit_tab)  # Switch to edit tab
+        self.id_entry.delete(0, tk.END)
+        self.id_entry.insert(0, bh_id)
+        self.load_data_for_edit()
+
 
 if __name__ == "__main__":
     root = tk.Tk()
