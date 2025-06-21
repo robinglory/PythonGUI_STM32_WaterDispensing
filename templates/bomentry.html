@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bom Entry</title>
+    <style>
+        body {
+            font-family: sans-serif;
+        }
+        table {
+            border-collapse: collapse;
+            width: 50%;
+            margin: 20px auto;
+        }
+        th, td {
+            border: 1px solid black;
+            padding: 8px;
+            text-align: left;
+        }
+        input[type="text"], input[type="date"] {
+            width: 100%;
+            padding: 8px;
+            margin: 4px 0;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+    <h1>Bom Entry</h1>
+    <form method="POST">
+        <label for="sr_no">SrNo:</label><br>
+        <input type="text" id="sr_no" name="sr_no"><br>
+        <label for="final_color">Final Color:</label><br>
+        <input type="text" id="final_color" name="final_color"><br>
+        <label for="date">Date:</label><br>
+        <input type="date" id="date" name="date"><br><br>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>SrNo</th>
+                    <th>Base Color</th>
+                    <th>Percentage</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>1</td>
+                    <td>Blue</td>
+                    <td>35</td>
+                </tr>
+                <tr>
+                    <td>2</td>
+                    <td>White</td>
+                    <td>35</td>
+                </tr>
+                <tr>
+                    <td>3</td>
+                    <td>Clear</td>
+                    <td>30</td>
+                </tr>
+                <tr>
+                    <td>4</td>
+                    <td>Mixer 1</td>
+                    <td>30</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <input type="submit" value="Submit">
+        <input type="button" value="Edit"> 
+    </form>
+</body>
+</html>
