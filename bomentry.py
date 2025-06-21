@@ -4,6 +4,9 @@ from tkcalendar import DateEntry
 from datetime import datetime
 import mysql.connector
 from mysql.connector import Error
+import csv
+import pandas as pd
+from tkinter import filedialog
 
 class BomEntryForm(tk.Toplevel):
     def __init__(self, master):
@@ -42,6 +45,40 @@ class BomEntryForm(tk.Toplevel):
         # Create tabbed interface (which calls load_all_boms)
         self.create_tabbed_interface()
 
+# Adding the CSV and Excel import/export methods
+    def export_bom_to_csv(self):
+        try:
+            rows = [self.boms_tree.item(item)['values'] for item in self.boms_tree.get_children()]
+            if not rows:
+                messagebox.showinfo("Export", "No BOM data to export.")
+                return
+            file_path = filedialog.asksaveasfilename(defaultextension=".csv",
+                                                    filetypes=[("CSV files", "*.csv")])
+            if not file_path:
+                return
+            with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(['BOM ID', 'Final Color', 'Date'])
+                writer.writerows(rows)
+            messagebox.showinfo("Export", f"BOM list exported to {file_path}")
+        except Exception as e:
+            messagebox.showerror("Export Error", str(e))
+
+    def export_bom_to_excel(self):
+        try:
+            rows = [self.boms_tree.item(item)['values'] for item in self.boms_tree.get_children()]
+            if not rows:
+                messagebox.showinfo("Export", "No BOM data to export.")
+                return
+            file_path = filedialog.asksaveasfilename(defaultextension=".xlsx",
+                                                    filetypes=[("Excel files", "*.xlsx")])
+            if not file_path:
+                return
+            df = pd.DataFrame(rows, columns=['BOM ID', 'Final Color', 'Date'])
+            df.to_excel(file_path, index=False)
+            messagebox.showinfo("Export", f"BOM list exported to {file_path}")
+        except Exception as e:
+            messagebox.showerror("Export Error", str(e))
 
 # Adding the add_base_color method to handle adding base colors
 # Adding insert data method to handle inserting BOM data
@@ -363,6 +400,17 @@ class BomEntryForm(tk.Toplevel):
         
         self.refresh_button = ttk.Button(filter_frame, text="Refresh", command=self.load_all_boms)
         self.refresh_button.pack(side=tk.RIGHT, padx=5)
+
+        # Add Export Buttons Frame under filter_frame or elsewhere
+        export_frame = ttk.Frame(self.view_tab)
+        export_frame.pack(fill=tk.X, padx=20, pady=5)
+
+        export_csv_btn = ttk.Button(export_frame, text="Export CSV", command=self.export_bom_to_csv)
+        export_csv_btn.pack(side=tk.LEFT, padx=5)
+
+        export_excel_btn = ttk.Button(export_frame, text="Export Excel", command=self.export_bom_to_excel)
+        export_excel_btn.pack(side=tk.LEFT, padx=5)
+
         
         # BOMs Treeview
         tree_frame = ttk.Frame(self.view_tab)

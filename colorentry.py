@@ -215,6 +215,10 @@ from tkinter import ttk, messagebox
 from tkcalendar import DateEntry
 from mysql_connection import Database
 from datetime import datetime, date
+import csv
+import pandas as pd
+from tkinter import filedialog
+import os
 
 
 class ColorEntryForm(tk.Toplevel):
@@ -265,6 +269,59 @@ class ColorEntryForm(tk.Toplevel):
 
         self.create_insert_widgets()
         self.create_edit_widgets()
+# export to csv
+    def export_to_csv(self):
+        try:
+            self.cursor.execute("SELECT * FROM ColorTable")
+            records = self.cursor.fetchall()
+            if not records:
+                messagebox.showinfo("Info", "No records to export.")
+                return
+
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                title="Save as CSV"
+            )
+            if not filename:
+                return
+
+            with open(filename, mode='w', newline='', encoding='utf-8') as file:
+                writer = csv.writer(file)
+                writer.writerow(["ColorID", "BaseColor", "PumpNumber", "Stock", "Date"])
+                writer.writerows(records)
+
+            messagebox.showinfo("Export Success", f"Data exported to CSV:\n{os.path.basename(filename)}")
+        except Exception as e:
+            messagebox.showerror("Export Error", str(e))
+
+
+    def export_to_excel(self):
+        try:
+            self.cursor.execute("SELECT * FROM ColorTable")
+            records = self.cursor.fetchall()
+            if not records:
+                messagebox.showinfo("Info", "No records to export.")
+                return
+
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
+                title="Save as Excel"
+            )
+            if not filename:
+                return
+
+            df = pd.DataFrame(records, columns=["ColorID", "BaseColor", "PumpNumber", "Stock", "Date"])
+            df.to_excel(filename, index=False)
+
+            messagebox.showinfo("Export Success", f"Data exported to Excel:\n{os.path.basename(filename)}")
+        except ImportError:
+            messagebox.showerror("Export Error", "pandas and openpyxl packages are required for Excel export.\nPlease install them with:\npip install pandas openpyxl")
+        except Exception as e:
+            messagebox.showerror("Export Error", str(e))
+
+
 
     def create_insert_widgets(self):
         fields = [("Base Color:", "base_color_entry"),
@@ -287,6 +344,11 @@ class ColorEntryForm(tk.Toplevel):
 
         ttk.Button(self.insert_tab, text="Insert", command=self.submit_data).grid(
             row=4, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+        button_frame = ttk.Frame(self.insert_tab)
+        button_frame.grid(row=5, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+        ttk.Button(button_frame, text="Export CSV", command=self.export_to_csv).pack(side="left", expand=True, fill="x", padx=5)
+        ttk.Button(button_frame, text="Export Excel", command=self.export_to_excel).pack(side="left", expand=True, fill="x", padx=5)
+
 
     def create_edit_widgets(self):
         fields = [("Color ID:", "edit_color_id_entry"),
