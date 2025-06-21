@@ -214,7 +214,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from tkcalendar import DateEntry
 from mysql_connection import Database
-from datetime import datetime
+from datetime import datetime, date
 
 
 class ColorEntryForm(tk.Toplevel):
@@ -356,22 +356,23 @@ class ColorEntryForm(tk.Toplevel):
             self.cursor.execute("SELECT * FROM ColorTable WHERE ColorID = %s", (color_id,))
             record = self.cursor.fetchone()
             if record:
-                _, base_color, pump_number, stock, date = record
+                _, base_color, pump_number, stock, date_value = record
                 self.edit_base_color_entry.delete(0, tk.END)
                 self.edit_base_color_entry.insert(0, base_color)
                 self.edit_pump_number_entry.delete(0, tk.END)
-                self.edit_pump_number_entry.delete(0, tk.END)
-                self.edit_pump_number_entry.insert(0, str(pump_number))  # ensure string
-
-                self.edit_date_entry.set_date(date.strftime('%Y-%m-%d'))  # force correct format
-
                 self.edit_pump_number_entry.insert(0, pump_number)
                 self.edit_stock_entry.delete(0, tk.END)
                 self.edit_stock_entry.insert(0, stock)
-                if isinstance(date, (datetime, )):
-                    self.edit_date_entry.set_date(date.date())
+                if isinstance(date_value, str):
+                    print("DATE VALUE:", repr(date_value))
+                    parsed_date = datetime.strptime(date_value.strip(), '%Y-%m-%d').date()
+                elif isinstance(date_value, datetime):
+                    parsed_date = date_value.date()
+                elif isinstance(date_value, date):
+                    parsed_date = date_value
                 else:
-                    self.edit_date_entry.set_date(date)
+                    raise ValueError("Unsupported date format")
+                self.edit_date_entry.set_date(parsed_date)
             else:
                 messagebox.showerror("Not Found", f"No record for ID: {color_id}")
         except Exception as e:
@@ -380,9 +381,13 @@ class ColorEntryForm(tk.Toplevel):
     def update_data(self):
         color_id = self.edit_color_id_entry.get()
         base_color = self.edit_base_color_entry.get()
+        # pump_number = self.edit_pump_number_entry.get()
+        # stock = self.edit_stock_entry.get()
+        # date = self.edit_date_entry.get_date().strftime('%Y-%m-%d')
         pump_number = self.edit_pump_number_entry.get()
         stock = self.edit_stock_entry.get()
         date = self.edit_date_entry.get_date().strftime('%Y-%m-%d')
+
 
         if not all([color_id, base_color, pump_number, stock, date]):
             messagebox.showerror("Error", "All fields must be filled.")
