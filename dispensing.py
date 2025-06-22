@@ -244,8 +244,8 @@ class DispensingForm(tk.Toplevel):
             df_heading = pd.DataFrame(heading, columns=["SrNo", "Final Color", "Batch No", "Date"])
             df_heading["Quantity"] = ""  # Placeholder if quantity is not stored here
             df_heading = df_heading[["SrNo", "Final Color", "Batch No", "Quantity", "Date"]]
-            df_heading.to_csv("DispensingHeading.csv", index=False)
-            df_heading.to_excel("DispensingHeading.xlsx", index=False)
+            df_heading.to_csv(r"C:\Users\ASUS\Documents\MinKhantTun(Project)\PythonGUI\PythonGUI\Dispensing Log\DispensingHeading.csv", index=False)
+            df_heading.to_excel(r"C:\Users\ASUS\Documents\MinKhantTun(Project)\PythonGUI\PythonGUI\Dispensing Log\DispensingHeading.xlsx", index=False)
 
             # Export DispensingDetail
             cursor.execute("SELECT DetailID as SrNo, BH_ID, BaseColor, Percentage FROM BOMDetail")
@@ -255,8 +255,8 @@ class DispensingForm(tk.Toplevel):
                 final_color = next((name for name, bid in self.final_color_map.items() if bid == bh_id), "")
                 detail_rows.append([sr, final_color, bh_id, base_color, f"{pct}%", self.date_entry.get()])
             df_detail = pd.DataFrame(detail_rows, columns=["SrNo", "Final Color", "Batch No", "Base Color", "Percentage", "Date"])
-            df_detail.to_csv("DispensingDetail.csv", index=False)
-            df_detail.to_excel("DispensingDetail.xlsx", index=False)
+            df_detail.to_csv(r"C:\Users\ASUS\Documents\MinKhantTun(Project)\PythonGUI\PythonGUI\Dispensing Log\DispensingDetail.csv", index=False)
+            df_detail.to_excel(r"C:\Users\ASUS\Documents\MinKhantTun(Project)\PythonGUI\PythonGUI\Dispensing Log\DispensingDetail.xlsx", index=False)
 
             messagebox.showinfo("Export", "Data exported to CSV and Excel successfully.")
         except Exception as e:

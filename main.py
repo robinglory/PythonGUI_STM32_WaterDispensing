@@ -10,21 +10,28 @@ class MainWindow(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("🧪 Dispensing Control Panel")
-        self.geometry("400x250")
-        self.configure(bg="#f7f7f7")
+        self.geometry("500x350")
+        self.configure(bg="#1e1e2f")
         self.resizable(False, False)
 
-        # Set ttk theme
         style = ttk.Style(self)
         style.theme_use("clam")
-        style.configure("TButton", font=("Segoe UI", 11), padding=10)
-        style.configure("TLabelFrame", background="#f7f7f7", font=("Segoe UI", 12, "bold"))
+        style.configure("TButton", font=("Segoe UI", 12, "bold"), padding=10, background="#3e3e50", foreground="white")
+        style.map("TButton",
+            background=[("active", "#5c5c77")],
+            foreground=[("disabled", "#a0a0a0")])
+        style.configure("TLabelFrame", background="#1e1e2f", foreground="white", font=("Segoe UI", 13, "bold"))
 
-        # Create a labeled frame for navigation
+        # Title Label
+        title_label = tk.Label(self, text="🎨 Color Dispensing Control Panel", font=("Segoe UI", 16, "bold"), fg="white", bg="#1e1e2f")
+        title_label.pack(pady=(20, 5))
+
+        subtitle_label = tk.Label(self, text="Created by Yan Naing Kyaw Tint\nVI McE-5", font=("Segoe UI", 11), fg="lightgray", bg="#1e1e2f")
+        subtitle_label.pack(pady=(0, 20))
+
         button_frame = ttk.LabelFrame(self, text="Main Menu")
-        button_frame.pack(expand=True, padx=20, pady=30)
+        button_frame.pack(expand=True, padx=20, pady=10)
 
-        # Create buttons
         ttk.Button(button_frame, text="🎨 Color Entry", command=self.open_color_entry).grid(row=0, column=0, padx=10, pady=10)
         ttk.Button(button_frame, text="📋 BOM Entry", command=self.open_bom_entry).grid(row=0, column=1, padx=10, pady=10)
         ttk.Button(button_frame, text="📦 Stock Entry", command=self.stock_entry).grid(row=1, column=0, padx=10, pady=10)
