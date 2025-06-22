@@ -1,29 +1,29 @@
+
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from tkcalendar import DateEntry
 from mysql_connection import Database
 from datetime import datetime, date
-import pandas as pd
+import csv
 import os
 
-EXPORT_FOLDER = r"C:\Users\ASUS\Documents\MinKhantTun(Project)\PythonGUI\PythonGUI\Stock Entry Log"
+EXPORT_PATH = r"C:\Users\ASUS\Documents\MinKhantTun(Project)\PythonGUI\PythonGUI\Stock Entry Log"
 
 class StockEntryForm(tk.Toplevel):
     def __init__(self, master=None):
         super().__init__(master)
-        self.title("Stock Entry")
-        self.configure(bg="#1e1e2f")
-        self.geometry("900x600")
+        self.title("📦 Stock Entry")
+        self.geometry("1200x800")
+        self.configure(bg="white")
         self.resizable(False, False)
 
-        # DB connect
-        self.db = Database(host='localhost', user='minkhanttun', password='your_password', database='mkt')
+        self.db = Database(host='localhost', user='minkhanttun', password='29112000', database='mkt')
         if self.db.connect():
             print("Database connected successfully.")
         else:
-            messagebox.showerror("Error", "Failed to connect to the database.")
+            print("Failed to connect to the database.")
 
-        self.colors = self.fetch_colors()  # For combobox
+        self.colors = self.fetch_colors()
         self.create_widgets()
         self.populate_color_combobox()
         self.load_stock_history()
@@ -31,102 +31,72 @@ class StockEntryForm(tk.Toplevel):
     def create_widgets(self):
         style = ttk.Style(self)
         style.theme_use("clam")
-        style.configure("TButton", font=("Segoe UI", 12, "bold"), padding=8, background="#3e3e50", foreground="white")
-        style.map("TButton",
-                  background=[("active", "#5c5c77")],
-                  foreground=[("disabled", "#a0a0a0")])
-        style.configure("TLabel", background="#1e1e2f", foreground="white", font=("Segoe UI", 11))
-        style.configure("TCombobox", font=("Segoe UI", 11))
-        style.configure("TEntry", font=("Segoe UI", 11))
-        style.configure("Treeview", font=("Segoe UI", 10), background="#2e2e3e", foreground="white",
-                        fieldbackground="#2e2e3e")
-        style.configure("Treeview.Heading", font=("Segoe UI", 11, "bold"), background="#3e3e50", foreground="white")
+        style.configure("TLabelFrame", background="white", font=("Segoe UI", 12, "bold"))
+        style.configure("TButton", font=("Segoe UI", 11), padding=6)
+        style.configure("TLabel", background="white", font=("Segoe UI", 10))
 
-        # Input frame
-        input_frame = ttk.LabelFrame(self, text="Stock Entry", style="TLabelFrame")
-        input_frame.place(x=20, y=20, width=860, height=140)
+        input_frame = ttk.LabelFrame(self, text="Stock Entry")
+        input_frame.pack(pady=15, padx=20, fill="x")
 
-        ttk.Label(input_frame, text="Base Color:").grid(row=0, column=0, padx=10, pady=10, sticky="e")
-        self.base_color_combobox = ttk.Combobox(input_frame, state='readonly', width=25)
+        form_inner = tk.Frame(input_frame, bg="white")
+        form_inner.pack(anchor="center", pady=10)
+
+        tk.Label(form_inner, text="Base Color:", bg="white").grid(row=0, column=0, padx=10, pady=10, sticky="e")
+        self.base_color_combobox = ttk.Combobox(form_inner, state='readonly', width=20)
         self.base_color_combobox.grid(row=0, column=1, padx=10, pady=10)
 
-        ttk.Label(input_frame, text="Batch No:").grid(row=1, column=0, padx=10, pady=10, sticky="e")
-        self.batch_no_entry = ttk.Entry(input_frame, width=28)
+        tk.Label(form_inner, text="Batch No:", bg="white").grid(row=1, column=0, padx=10, pady=10, sticky="e")
+        self.batch_no_entry = tk.Entry(form_inner, width=22)
         self.batch_no_entry.grid(row=1, column=1, padx=10, pady=10)
 
-        ttk.Label(input_frame, text="Come (Qty):").grid(row=0, column=2, padx=10, pady=10, sticky="e")
-        self.come_entry = ttk.Entry(input_frame, width=20)
-        self.come_entry.grid(row=0, column=3, padx=10, pady=10)
+        tk.Label(form_inner, text="Come (Qty):", bg="white").grid(row=2, column=0, padx=10, pady=10, sticky="e")
+        self.come_entry = tk.Entry(form_inner, width=22)
+        self.come_entry.grid(row=2, column=1, padx=10, pady=10)
 
-        ttk.Label(input_frame, text="Date:").grid(row=1, column=2, padx=10, pady=10, sticky="e")
-        self.date_entry = DateEntry(input_frame, date_pattern='yyyy-mm-dd', width=18)
-        self.date_entry.grid(row=1, column=3, padx=10, pady=10)
+        tk.Label(form_inner, text="Date:", bg="white").grid(row=3, column=0, padx=10, pady=10, sticky="e")
+        self.date_entry = DateEntry(form_inner, date_pattern='yyyy-mm-dd', width=19)
+        self.date_entry.grid(row=3, column=1, padx=10, pady=10)
 
-        # Buttons
         self.submit_button = ttk.Button(input_frame, text="Submit", command=self.submit_data)
-        self.submit_button.grid(row=2, column=0, columnspan=2, padx=10, pady=15, sticky="ew")
+        self.submit_button.pack(pady=10)
 
-        self.clear_button = ttk.Button(input_frame, text="Clear", command=self.clear_entries)
-        self.clear_button.grid(row=2, column=2, columnspan=2, padx=10, pady=15, sticky="ew")
+        filter_frame = ttk.LabelFrame(self, text="Filter Stock History by Date")
+        filter_frame.pack(pady=15, padx=20, fill="x")
 
-        # Filter frame
-        filter_frame = ttk.LabelFrame(self, text="Filter Stock History by Date", style="TLabelFrame")
-        filter_frame.place(x=20, y=180, width=860, height=80)
+        filter_inner = tk.Frame(filter_frame, bg="white")
+        filter_inner.pack(anchor="center", pady=10)
 
-        ttk.Label(filter_frame, text="Start Date:").grid(row=0, column=0, padx=10, pady=20, sticky="e")
-        self.start_date = DateEntry(filter_frame, date_pattern='yyyy-mm-dd', width=18)
-        self.start_date.grid(row=0, column=1, padx=10, pady=20)
+        tk.Label(filter_inner, text="From:", bg="white").grid(row=0, column=0, padx=10)
+        self.from_date = DateEntry(filter_inner, date_pattern='yyyy-mm-dd')
+        self.from_date.grid(row=0, column=1, padx=10)
 
-        ttk.Label(filter_frame, text="End Date:").grid(row=0, column=2, padx=10, pady=20, sticky="e")
-        self.end_date = DateEntry(filter_frame, date_pattern='yyyy-mm-dd', width=18)
-        self.end_date.grid(row=0, column=3, padx=10, pady=20)
+        tk.Label(filter_inner, text="To:", bg="white").grid(row=0, column=2, padx=10)
+        self.to_date = DateEntry(filter_inner, date_pattern='yyyy-mm-dd')
+        self.to_date.grid(row=0, column=3, padx=10)
 
-        self.filter_button = ttk.Button(filter_frame, text="Apply Filter", command=self.apply_date_filter)
+        self.filter_button = ttk.Button(filter_inner, text="Filter", command=self.filter_history)
         self.filter_button.grid(row=0, column=4, padx=10)
 
-        self.reset_filter_button = ttk.Button(filter_frame, text="Reset Filter", command=self.load_stock_history)
-        self.reset_filter_button.grid(row=0, column=5, padx=10)
+        table_frame = ttk.LabelFrame(self, text="Stock History Log")
+        table_frame.pack(padx=20, pady=10, fill="both", expand=True)
 
-        # Table frame
-        table_frame = ttk.LabelFrame(self, text="Stock History Log", style="TLabelFrame")
-        table_frame.place(x=20, y=270, width=860, height=300)
-
-        columns = ("SrNo", "BaseColor", "BatchNo", "Come", "Date")
-        self.tree = ttk.Treeview(table_frame, columns=columns, show='headings', selectmode='browse')
-        self.tree.heading("SrNo", text="SrNo")
-        self.tree.heading("BaseColor", text="Base Color")
-        self.tree.heading("BatchNo", text="Batch No")
+        self.tree = ttk.Treeview(table_frame, columns=("ColorID", "BatchNumber", "Come", "Date"), show="headings")
+        self.tree.heading("ColorID", text="Color ID")
+        self.tree.heading("BatchNumber", text="Batch No")
         self.tree.heading("Come", text="Quantity")
         self.tree.heading("Date", text="Date")
+        self.tree.pack(fill="both", expand=True)
 
-        self.tree.column("SrNo", width=50, anchor='center')
-        self.tree.column("BaseColor", width=150)
-        self.tree.column("BatchNo", width=150)
-        self.tree.column("Come", width=100, anchor='center')
-        self.tree.column("Date", width=150, anchor='center')
-
-        self.tree.pack(fill='both', expand=True, padx=10, pady=10)
-
-        # Export buttons
-        export_frame = ttk.Frame(self)
-        export_frame.place(x=20, y=580, width=860, height=40)
-
-        self.export_csv_button = ttk.Button(export_frame, text="Export CSV", command=self.export_csv)
-        self.export_csv_button.pack(side='left', padx=20)
-
-        self.export_excel_button = ttk.Button(export_frame, text="Export Excel", command=self.export_excel)
-        self.export_excel_button.pack(side='left', padx=20)
+        export_button = ttk.Button(self, text="📁 Export Log", command=self.export_log)
+        export_button.pack(pady=10)
 
     def fetch_colors(self):
-        """Fetch existing colors from the ColorTable."""
         try:
             cursor = self.db.connection.cursor()
             cursor.execute("SELECT ColorID, BaseColor FROM ColorTable")
-            colors = cursor.fetchall()
-            cursor.close()
-            return colors
+            return cursor.fetchall()
         except Exception as e:
-            messagebox.showerror("Error", f"Error fetching colors: {e}")
+            print("Error fetching colors:", e)
             return []
 
     def populate_color_combobox(self):
@@ -141,153 +111,73 @@ class StockEntryForm(tk.Toplevel):
         come = self.come_entry.get()
         date_input = self.date_entry.get()
 
-        if not (base_color and batch_no and come and date_input):
+        if not (batch_no and come and date_input):
             messagebox.showerror("Error", "All fields are required!")
             return
 
         try:
-            come_val = int(come)
-            if come_val <= 0:
-                messagebox.showerror("Error", "'Come' quantity must be greater than zero.")
-                return
+            come = int(come)
+            if come <= 0:
+                raise ValueError
         except ValueError:
-            messagebox.showerror("Error", "'Come' quantity must be a valid number.")
+            messagebox.showerror("Error", "Come must be a positive integer.")
             return
 
-        # Get ColorID for base_color
-        color_id = next((c[0] for c in self.colors if c[1] == base_color), None)
-        if color_id is None:
-            messagebox.showerror("Error", "Selected color not found in database.")
-            return
-
-        formatted_date = self.format_date(date_input)
-        if not formatted_date:
-            return
-
-        try:
-            cursor = self.db.connection.cursor()
-            # Update stock
-            update_stock_query = """UPDATE ColorTable SET Stock = Stock + %s, Date = %s WHERE ColorID = %s"""
-            cursor.execute(update_stock_query, (come_val, formatted_date, color_id))
-            self.db.connection.commit()
-
-            # Insert into StockRecord
-            insert_query = """INSERT INTO StockRecord (ColorID, BatchNumber, Come, Date)
-                              VALUES (%s, %s, %s, %s)"""
-            cursor.execute(insert_query, (color_id, batch_no, come_val, formatted_date))
-            self.db.connection.commit()
-            cursor.close()
-
-            messagebox.showinfo("Success", "Stock entry added successfully.")
-            self.load_stock_history()
-            self.clear_entries()
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to insert data: {e}")
-
-    def clear_entries(self):
-        self.batch_no_entry.delete(0, tk.END)
-        self.come_entry.delete(0, tk.END)
-        self.date_entry.set_date(date.today())
-
-    def format_date(self, date_text):
-        try:
-            date_obj = datetime.strptime(date_text, '%Y-%m-%d')
-            return date_obj.strftime('%d %B %Y')
-        except Exception as e:
-            messagebox.showerror("Error", "Date format error. Please use 'yyyy-mm-dd'.")
-            return None
+        new_color_id = next((color[0] for color in self.colors if color[1] == base_color), None)
+        if new_color_id:
+            try:
+                cursor = self.db.connection.cursor()
+                cursor.execute("UPDATE ColorTable SET Stock = Stock + %s, Date = %s WHERE ColorID = %s", (come, date_input, new_color_id))
+                cursor.execute("INSERT INTO StockRecord (ColorID, BatchNumber, Come, Date) VALUES (%s, %s, %s, %s)", (new_color_id, batch_no, come, date_input))
+                self.db.connection.commit()
+                messagebox.showinfo("Success", "Stock entry added successfully.")
+                self.load_stock_history()
+            except Exception as e:
+                messagebox.showerror("Error", f"Database error: {e}")
+        else:
+            messagebox.showerror("Error", "Base color not found in the database.")
 
     def load_stock_history(self):
-        # Clear current rows
-        for row in self.tree.get_children():
-            self.tree.delete(row)
-
         try:
             cursor = self.db.connection.cursor()
-            # Join StockRecord with ColorTable to get BaseColor name
-            cursor.execute(
-                """SELECT sr.StockRecordID, ct.BaseColor, sr.BatchNumber, sr.Come, sr.Date
-                   FROM StockRecord sr
-                   JOIN ColorTable ct ON sr.ColorID = ct.ColorID
-                   ORDER BY sr.Date DESC, sr.StockRecordID DESC""")
-            records = cursor.fetchall()
-            cursor.close()
-
-            for i, (srid, base_color, batch_no, come, dt) in enumerate(records, start=1):
-                formatted_dt = dt.strftime('%d %b %Y') if isinstance(dt, (datetime, date)) else dt
-                self.tree.insert("", "end", values=(i, base_color, batch_no, come, formatted_dt))
+            cursor.execute("SELECT ColorID, BatchNumber, Come, Date FROM StockRecord ORDER BY Date DESC")
+            rows = cursor.fetchall()
+            self.update_treeview(rows)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load stock history: {e}")
 
-    def apply_date_filter(self):
-        start = self.start_date.get_date()
-        end = self.end_date.get_date()
-
-        if start > end:
-            messagebox.showerror("Error", "Start date cannot be after end date.")
-            return
-
-        for row in self.tree.get_children():
-            self.tree.delete(row)
-
+    def filter_history(self):
+        from_date = self.from_date.get()
+        to_date = self.to_date.get()
         try:
             cursor = self.db.connection.cursor()
-            cursor.execute(
-                """SELECT sr.StockRecordID, ct.BaseColor, sr.BatchNumber, sr.Come, sr.Date
-                   FROM StockRecord sr
-                   JOIN ColorTable ct ON sr.ColorID = ct.ColorID
-                   WHERE sr.Date BETWEEN %s AND %s
-                   ORDER BY sr.Date DESC, sr.StockRecordID DESC""", (start, end))
-            records = cursor.fetchall()
-            cursor.close()
-
-            for i, (srid, base_color, batch_no, come, dt) in enumerate(records, start=1):
-                formatted_dt = dt.strftime('%d %b %Y') if isinstance(dt, (datetime, date)) else dt
-                self.tree.insert("", "end", values=(i, base_color, batch_no, come, formatted_dt))
+            query = "SELECT ColorID, BatchNumber, Come, Date FROM StockRecord WHERE Date BETWEEN %s AND %s ORDER BY Date DESC"
+            cursor.execute(query, (from_date, to_date))
+            rows = cursor.fetchall()
+            self.update_treeview(rows)
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to apply date filter: {e}")
+            messagebox.showerror("Error", f"Filtering failed: {e}")
 
-    def export_csv(self):
-        self.export_data("csv")
+    def update_treeview(self, rows):
+        for i in self.tree.get_children():
+            self.tree.delete(i)
+        for row in rows:
+            self.tree.insert("", "end", values=row)
 
-    def export_excel(self):
-        self.export_data("xlsx")
-
-    def export_data(self, file_type):
-        if not os.path.exists(EXPORT_FOLDER):
-            os.makedirs(EXPORT_FOLDER)
-
-        items = self.tree.get_children()
-        if not items:
-            messagebox.showwarning("Warning", "No data to export.")
-            return
-
-        data = []
-        for item in items:
-            data.append(self.tree.item(item)['values'])
-
-        df = pd.DataFrame(data, columns=["SrNo", "BaseColor", "BatchNo", "Quantity", "Date"])
-        now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"StockEntryLog_{now_str}.{file_type}"
-        filepath = os.path.join(EXPORT_FOLDER, filename)
-
-        try:
-            if file_type == "csv":
-                df.to_csv(filepath, index=False)
-            else:
-                df.to_excel(filepath, index=False)
-
-            messagebox.showinfo("Export Successful", f"Data exported to:\n{filepath}")
-        except Exception as e:
-            messagebox.showerror("Export Failed", f"Failed to export data: {e}")
-
-    def on_closing(self):
-        self.db.disconnect()
-        self.destroy()
+    def export_log(self):
+        if not os.path.exists(EXPORT_PATH):
+            os.makedirs(EXPORT_PATH)
+        filename = f"stock_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        filepath = os.path.join(EXPORT_PATH, filename)
+        with open(filepath, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["ColorID", "BatchNumber", "Come", "Date"])
+            for row in self.tree.get_children():
+                writer.writerow(self.tree.item(row)['values'])
+        messagebox.showinfo("Export", f"Log exported to: {filepath}")
 
 if __name__ == "__main__":
     root = tk.Tk()
     root.withdraw()
-    app = StockEntryForm(root)
-    app.protocol("WM_DELETE_WINDOW", app.on_closing)
+    app = StockEntryForm(master=root)
     app.mainloop()
