@@ -1,259 +1,306 @@
-# import tkinter as tk
-# from tkinter import ttk, messagebox
-# from tkcalendar import DateEntry
-# from datetime import datetime
-# from mysql_connection import Database  # Ensure you have a Database class for MySQL connection
+import serial
+import tkinter as tk
+from tkinter import ttk, messagebox, scrolledtext
+from tkcalendar import DateEntry
+from datetime import datetime
+from mysql_connection import Database
+import time
+import csv
+import pandas as pd
+import threading
 
-# class DispensingForm(tk.Toplevel):
-#     def __init__(self, master=None):
-#         super().__init__(master)
-#         self.title("Dispensing")
+class DispensingForm(tk.Toplevel):
+    def __init__(self, master=None):
+        super().__init__(master)
+        self.title("Dispensing")
+        self.geometry("600x600")
 
-#         # Initialize the Database instance
-#         self.db = Database(host='localhost', user='nenp', password='password', database='enpdatabase')
-#         if self.db.connect():  # Connect to the database
-#             print("Database connected successfully.")
-#         else:
-#             print("Failed to connect to the database.")
+        self.arduino_port = "COM8"
+        self.baud_rate = 9600
+        self.arduino = None
 
-#         # Fetch available final colors from BOMHeading table
-#         self.final_colors = self.fetch_final_colors()
+        self.db = Database(host='localhost', user='minkhanttun', password='29112000', database='mkt')
+        if self.db.connect():
+            print("Database connected successfully.")
+        else:
+            print("Failed to connect to the database.")
 
-#         self.create_widgets()
+        self.initialize_serial()
+        self.pump_map = self.fetch_pump_map()
+        self.final_colors = self.fetch_final_colors()
 
-#     def create_widgets(self):
-#         # Labels
-#         self.final_color_label = tk.Label(self, text="Final Color")
-#         self.final_color_label.grid(row=0, column=0, padx=5, pady=5)
+        self.create_widgets()
+        self.start_serial_listener()
 
-#         self.batch_no_label = tk.Label(self, text="Batch No")
-#         self.batch_no_label.grid(row=1, column=0, padx=5, pady=5)
+    def initialize_serial(self):
+        try:
+            self.arduino = serial.Serial(self.arduino_port, self.baud_rate, timeout=0.1)
+            time.sleep(2)
+            print("Serial connection established with Arduino.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to connect to Arduino: {e}")
+            self.arduino = None
 
-#         self.date_label = tk.Label(self, text="Date")
-#         self.date_label.grid(row=2, column=0, padx=5, pady=5)
+    def start_serial_listener(self):
+        def listen():
+            while True:
+                try:
+                    if self.arduino and self.arduino.in_waiting:
+                        line = self.arduino.readline().decode().strip()
+                        if line:
+                            tag = 'success'
+                            if line.startswith('📊'):
+                                tag = 'info'
+                            elif line.startswith('➡️') or line.startswith('⬅️'):
+                                tag = 'command'
+                            elif "error" in line.lower():
+                                tag = 'error'
+                            self.log_message(f"{line}", tag)
+                except Exception as e:
+                    self.log_message(f"Serial listener error: {e}", 'error')
+                    break
+        thread = threading.Thread(target=listen, daemon=True)
+        thread.start()
 
-#         self.quantity_label = tk.Label(self, text="Quantity")
-#         self.quantity_label.grid(row=3, column=0, padx=5, pady=5)
+    def fetch_pump_map(self):
+        pump_map = {}
+        try:
+            cursor = self.db.connection.cursor()
+            cursor.execute("SELECT BaseColor, PumpNumber FROM ColorTable")
+            for base_color, pump_number in cursor.fetchall():
+                if pump_number == 8:
+                    pump_number = 9
+                elif pump_number == 9:
+                    pump_number = 8
+                pump_map[base_color] = pump_number
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to fetch pump map: {e}")
+        finally:
+            cursor.close()
+        return pump_map
 
-#         # Combobox for selecting final color (from BOMHeading)
-#         self.final_color_combobox = ttk.Combobox(self, values=self.final_colors)
-#         self.final_color_combobox.grid(row=0, column=1, padx=5, pady=5)
+    def fetch_final_colors(self):
+        try:
+            cursor = self.db.connection.cursor()
+            cursor.execute("SELECT BH_ID, FinalColor FROM BOMHeading")
+            self.final_color_map = {name: bh_id for bh_id, name in cursor.fetchall()}
+            return list(self.final_color_map.keys())
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to fetch final colors: {e}")
+            return []
+        finally:
+            cursor.close()
 
-#         # Entry for batch number
-#         self.batch_no_entry = tk.Entry(self)
-#         self.batch_no_entry.grid(row=1, column=1, padx=5, pady=5)
+    def create_widgets(self):
+        ttk.Label(self, text="Final Color").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.final_color_combobox = ttk.Combobox(self, values=self.final_colors)
+        self.final_color_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        self.final_color_combobox.bind("<<ComboboxSelected>>", self.load_batch_number)
 
-#         # DateEntry for date input
-#         self.date_entry = DateEntry(self, date_pattern='yyyy-mm-dd')
-#         self.date_entry.grid(row=2, column=1, padx=5, pady=5)
+        ttk.Label(self, text="Batch No").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.batch_no_entry = tk.Entry(self)
+        self.batch_no_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
 
-#         # Entry for quantity
-#         self.quantity_entry = tk.Entry(self)
-#         self.quantity_entry.grid(row=3, column=1, padx=5, pady=5)
+        ttk.Label(self, text="Date").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        self.date_entry = DateEntry(self, date_pattern='yyyy-mm-dd')
+        self.date_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
 
-#         # Buttons
-#         self.dispense_button = ttk.Button(self, text="Dispense", command=self.dispense)
-#         self.dispense_button.grid(row=4, column=0, padx=5, pady=10)
+        ttk.Label(self, text="Quantity").grid(row=3, column=0, padx=5, pady=5, sticky="w")
+        self.quantity_entry = tk.Entry(self)
+        self.quantity_entry.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
 
-#         self.cancel_button = ttk.Button(self, text="Cancel", command=self.cancel)
-#         self.cancel_button.grid(row=4, column=1, padx=5, pady=10)
+        self.dispense_button = ttk.Button(self, text="Dispense", command=self.dispense)
+        self.dispense_button.grid(row=4, column=0, columnspan=2, padx=5, pady=10, sticky="ew")
 
-#     def fetch_final_colors(self):
-#         """Fetch available final colors from BOMHeading table."""
-#         try:
-#             cursor = self.db.connection.cursor()
-#             cursor.execute("SELECT DISTINCT FinalColor FROM BOMHeading")
-#             final_colors = [row[0] for row in cursor.fetchall()]  # Get all distinct final colors
-#             return final_colors
-#         except Exception as e:
-#             messagebox.showerror("Error", f"Failed to fetch final colors: {e}")
-#             return []
-#         finally:
-#             cursor.close()
+        self.show_calib_button = ttk.Button(self, text="Show Calibration", command=self.show_calibration)
+        self.show_calib_button.grid(row=5, column=0, padx=5, pady=5, sticky="ew")
 
-#     def fetch_base_color_percentage(self, final_color):
-#         """Fetch BaseColor and Percentage from BOMDetail for the selected FinalColor."""
-#         try:
-#             cursor = self.db.connection.cursor()
-#             query = "SELECT BaseColor, Percentage FROM BOMDetail WHERE FinalColor = %s"
-#             cursor.execute(query, (final_color,))
-#             base_color_details = cursor.fetchall()  # Fetch all BaseColor and Percentage for the final color
-#             return base_color_details
-#         except Exception as e:
-#             messagebox.showerror("Error", f"Failed to fetch base color details: {e}")
-#             return []
-#         finally:
-#             cursor.close()
+        self.stop_button = ttk.Button(self, text="Stop Pumps", command=self.stop_pumps)
+        self.stop_button.grid(row=5, column=1, padx=5, pady=5, sticky="ew")
 
-#     def fetch_available_stock(self, base_colors):
-#         """Fetch available stock for the given base colors."""
-#         stock_availability = {}
-#         try:
-#             cursor = self.db.connection.cursor()
-#             for base_color in base_colors:
-#                 query = "SELECT Stock FROM ColorTable WHERE BaseColor = %s"
-#                 cursor.execute(query, (base_color,))
-#                 stock = cursor.fetchone()
-#                 if stock:
-#                     stock_availability[base_color] = stock[0]  # Store available stock
-#         except Exception as e:
-#             messagebox.showerror("Error", f"Failed to fetch stock: {e}")
-#         finally:
-#             cursor.close()
-#         return stock_availability
+        self.log_box = scrolledtext.ScrolledText(self, height=15, wrap=tk.WORD, bg='black', fg='white', insertbackground='white')
+        self.log_box.grid(row=6, column=0, columnspan=2, padx=10, pady=10, sticky="nsew")
+        self.log_box.tag_config('error', foreground='red')
+        self.log_box.tag_config('success', foreground='lightgreen')
+        self.log_box.tag_config('command', foreground='yellow')
+        self.log_box.tag_config('info', foreground='cyan')
 
-#     def dispense(self):
-#         # Get data from entry fields
-#         final_color = self.final_color_combobox.get()
-#         batch_no = self.batch_no_entry.get()
-#         date = self.date_entry.get()
-#         quantity = self.quantity_entry.get()
+        self.export_button = ttk.Button(self, text="Export to CSV & Excel", command=self.export_data)
+        self.export_button.grid(row=7, column=0, columnspan=2, padx=10, pady=5, sticky="ew")
 
-#         # Validation
-#         if not (final_color and batch_no and date and quantity):
-#             messagebox.showerror("Error", "All fields are required!")
-#             return
+        self.cancel_button = ttk.Button(self, text="Cancel", command=self.cancel)
+        self.cancel_button.grid(row=8, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
 
-#         # Format the date using the custom format_date function
-#         formatted_date = self.format_date(date)
+        self.columnconfigure(1, weight=1)
+        self.rowconfigure(6, weight=1)
 
-#         if formatted_date is None:  # If date is invalid, stop the execution
-#             return
+    def log_message(self, message, tag=None):
+        self.log_box.configure(state='normal')
+        self.log_box.insert(tk.END, message + '\n')
+        if tag:
+            self.log_box.tag_add(tag, f'end-{len(message)+1}c', tk.END)
+        self.log_box.see(tk.END)
+        self.log_box.configure(state='disabled')
 
-#         # Fetch BaseColor and Percentage for the selected FinalColor from BOMDetail
-#         base_color_details = self.fetch_base_color_percentage(final_color)
-#         if not base_color_details:
-#             messagebox.showerror("Error", f"No base color data found for {final_color}")
-#             return
+    def load_batch_number(self, event):
+        selected_color = self.final_color_combobox.get()
+        if selected_color in self.final_color_map:
+            self.batch_no_entry.delete(0, tk.END)
+            self.batch_no_entry.insert(0, f"{self.final_color_map[selected_color]}")
 
-#         # Calculate total volume to dispense based on percentage
-#         total_quantity = float(quantity)  # Convert quantity to float
-#         actual_values = []  # To store actual values for each base color
+    def fetch_base_color_percentage(self, final_color):
+        try:
+            cursor = self.db.connection.cursor()
+            query = "SELECT BaseColor, Percentage FROM BOMDetail WHERE BH_ID = %s"
+            bh_id = self.final_color_map.get(final_color)
+            cursor.execute(query, (bh_id,))
+            return cursor.fetchall()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to fetch base color details: {e}")
+            return []
+        finally:
+            cursor.close()
 
-#         # Check stock availability
-#         base_colors = [base_color for base_color, _ in base_color_details]
-#         stock_availability = self.fetch_available_stock(base_colors)
+    def send_to_arduino(self, data):
+        try:
+            if self.arduino:
+                self.arduino.write(data.encode())
+                self.log_message(f"➡️ {data.strip()}", 'command')
+        except Exception as e:
+            self.log_message(f"Error communicating with Arduino: {e}", 'error')
+        return None
 
-#         for base_color, percentage in base_color_details:
-#             # Convert percentage to float before calculating
-#             percentage = float(percentage)  # Ensure percentage is a float
-#             # Calculate actual volume based on percentage
-#             actual_volume = (total_quantity * percentage) / 100
+    def show_calibration(self):
+        color = self.final_color_combobox.get()
+        if not color:
+            messagebox.showerror("Error", "Select a color to show calibration")
+            return
+        base_color_details = self.fetch_base_color_percentage(color)
+        for base_color, _ in base_color_details:
+            pump = self.pump_map.get(base_color, -1)
+            if pump != -1:
+                self.send_to_arduino(f"C{pump}\n")
 
-#             # Check if sufficient stock is available
-#             if base_color in stock_availability and stock_availability[base_color] < actual_volume:
-#                 messagebox.showerror("Error", f"Insufficient stock for {base_color}. Available: {stock_availability[base_color]}, Required: {actual_volume}")
-#                 return
+    def stop_pumps(self):
+        self.send_to_arduino("S\n")
 
-#             actual_values.append((base_color, percentage, actual_volume))  # Store details for later insertion
+    def dispense(self):
+        final_color = self.final_color_combobox.get()
+        batch_no = self.batch_no_entry.get()
+        date = self.date_entry.get()
+        quantity = self.quantity_entry.get()
 
-#         # Insert into DispensingHeading
-#         try:
-#             cursor = self.db.connection.cursor()
-#             heading_query = """INSERT INTO DispensingHeading (FinalColor, BatchNo, Quantity, Date)
-#                                VALUES (%s, %s, %s, %s)"""
-#             cursor.execute(heading_query, (final_color, batch_no, total_quantity, formatted_date))
-#             heading_srno = cursor.lastrowid  # Get the auto-incremented SrNo for the heading entry
-#             self.db.connection.commit()
+        if not (final_color and batch_no and date and quantity):
+            messagebox.showerror("Error", "All fields are required!")
+            return
 
-#             # Insert into DispensingDetail
-#             detail_query = """INSERT INTO DispensingDetail (FinalColor, BatchNo, BaseColor, Percentage, Actual, Date, DispensingHeadingID)
-#                               VALUES (%s, %s, %s, %s, %s, %s, %s)"""
+        formatted_date = self.format_date(date)
+        if not formatted_date:
+            return
 
-#             for base_color, percentage, actual in actual_values:
-#                 cursor.execute(detail_query, (final_color, batch_no, base_color, percentage, actual, formatted_date, heading_srno))
+        base_color_details = self.fetch_base_color_percentage(final_color)
+        if not base_color_details:
+            messagebox.showerror("Error", f"No base color data found for {final_color}")
+            return
 
-#             self.db.connection.commit()
+        total_quantity = float(quantity)
+        actual_values = []
 
-#             # Deduct stock from ColorTable
-#             self.deduct_stock(actual_values)
+        for base_color, percentage in base_color_details:
+            percentage = float(percentage)
+            actual_volume = (total_quantity * percentage) / 100
+            actual_values.append((base_color, percentage, actual_volume))
 
-#             messagebox.showinfo("Success", "Data inserted and stock updated successfully.")
-#         except Exception as e:
-#             messagebox.showerror("Error", f"Failed to insert data: {e}")
-#             print("Failed to insert data:", e)
-#         finally:
-#             cursor.close()
+        try:
+            for base_color, percentage, actual_volume in actual_values:
+                pump_id = self.pump_map.get(base_color, -1)
+                if pump_id == -1:
+                    messagebox.showerror("Error", f"No pump mapping found for base color: {base_color}")
+                    return
+                if pump_id == 8 and actual_volume not in (50, 100, 150):
+                    messagebox.showerror("Error", "Pump 8 supports only 50, 100, 150 mL")
+                    return
+                cmd = f"D{pump_id}:{int(actual_volume)}\n"
+                self.send_to_arduino(cmd)
 
-#         self.clear_entries()  # Clear entry fields after submission
+        except Exception as e:
+            messagebox.showerror("Error", f"Error sending data to Arduino: {e}")
 
-#     def deduct_stock(self, actual_values):
-#         """Deduct stock from ColorTable based on the actual volumes dispensed."""
-#         try:
-#             cursor = self.db.connection.cursor()
-#             for base_color, _, actual in actual_values:
-#                 update_query = "UPDATE ColorTable SET Stock = Stock - %s WHERE BaseColor = %s"
-#                 cursor.execute(update_query, (actual, base_color))
-#             self.db.connection.commit()  # Commit the stock deduction
-#         except Exception as e:
-#             messagebox.showerror("Error", f"Failed to update stock: {e}")
-#         finally:
-#             cursor.close()
+    def format_date(self, date_string):
+        try:
+            date_object = datetime.strptime(date_string, "%Y-%m-%d")
+            return date_object.strftime("%d %B %Y")
+        except ValueError:
+            messagebox.showerror("Error", "Invalid date format")
+            return None
 
-#     def format_date(self, date_string):
-#         """Custom function to format the date into 'DD Month YYYY' format."""
-#         try:
-#             # Parse the date string assuming the input is 'yyyy-mm-dd'
-#             date_object = datetime.strptime(date_string, "%Y-%m-%d")
-#             # Format the date as 'DD Month YYYY'
-#             formatted_date = date_object.strftime("%d %B %Y")
-#             return formatted_date
-#         except ValueError:
-#             # Handle the case where the date format is not as expected
-#             messagebox.showerror("Error", "Invalid date format")
-#             return None
+    def export_data(self):
+        try:
+            cursor = self.db.connection.cursor()
 
-#     def clear_entries(self):
-#         self.final_color_combobox.set('')  # Clear combobox selection
-#         self.batch_no_entry.delete(0, tk.END)
-#         self.quantity_entry.delete(0, tk.END)
-#         self.date_entry.set_date(datetime.today())
+            # Export DispensingHeading
+            cursor.execute("SELECT BH_ID as SrNo, FinalColor, BH_ID as BatchNo, Date FROM BOMHeading")
+            heading = cursor.fetchall()
+            df_heading = pd.DataFrame(heading, columns=["SrNo", "Final Color", "Batch No", "Date"])
+            df_heading["Quantity"] = ""  # Placeholder if quantity is not stored here
+            df_heading = df_heading[["SrNo", "Final Color", "Batch No", "Quantity", "Date"]]
+            df_heading.to_csv("DispensingHeading.csv", index=False)
+            df_heading.to_excel("DispensingHeading.xlsx", index=False)
 
-#     def cancel(self):
-#         self.destroy()
+            # Export DispensingDetail
+            cursor.execute("SELECT DetailID as SrNo, BH_ID, BaseColor, Percentage FROM BOMDetail")
+            details = cursor.fetchall()
+            detail_rows = []
+            for sr, bh_id, base_color, pct in details:
+                final_color = next((name for name, bid in self.final_color_map.items() if bid == bh_id), "")
+                detail_rows.append([sr, final_color, bh_id, base_color, f"{pct}%", self.date_entry.get()])
+            df_detail = pd.DataFrame(detail_rows, columns=["SrNo", "Final Color", "Batch No", "Base Color", "Percentage", "Date"])
+            df_detail.to_csv("DispensingDetail.csv", index=False)
+            df_detail.to_excel("DispensingDetail.xlsx", index=False)
 
-#     def on_closing(self):
-#         self.db.disconnect()
-#         self.destroy()
+            messagebox.showinfo("Export", "Data exported to CSV and Excel successfully.")
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export data: {e}")
+        finally:
+            cursor.close()
 
-# if __name__ == "__main__":
-#     root = tk.Tk()
-#     root.withdraw()  # Hide the main root window
-#     app = DispensingForm(root)
+    def cancel(self):
+        self.destroy()
 
-#     # Ensure proper disconnection on close
-#     app.protocol("WM_DELETE_WINDOW", app.on_closing)
-#     app.mainloop()
+if __name__ == "__main__":
+    root = tk.Tk()
+    root.withdraw()
+    app = DispensingForm(root)
+    app.mainloop()
 
 
-
-
-
-# old code before Jan6
+# # version 1 - Jan6 16:47
 # import serial
 # import tkinter as tk
 # from tkinter import ttk, messagebox
 # from tkcalendar import DateEntry
 # from datetime import datetime
 # from mysql_connection import Database  # Ensure you have a Database class for MySQL connection
+# import time
 
 # class DispensingForm(tk.Toplevel):
+#     COMMAND_PREFIX = 'C'  # Command prefix for dispensing
+
 #     def __init__(self, master=None):
 #         super().__init__(master)
 #         self.title("Dispensing")
-#         self.arduino_port = "COM3"  # Replace with your Arduino's COM port
+#         self.arduino_port = "/dev/ttyUSB0"  # Replace with your Arduino's COM port
 #         self.baud_rate = 9600       # Match with Arduino's baud rate
 #         self.arduino = None         # Placeholder for serial connection
 
 #         # Initialize the Database instance
-#         self.db = Database(host='localhost', user='nenp', password='password', database='enpdatabase')
+#         self.db = Database(host='localhost', user='minkhanttun', password='your_password', database='mkt')
 #         if self.db.connect():  # Connect to the database
 #             print("Database connected successfully.")
 #         else:
 #             print("Failed to connect to the database.")
 
 #         self.initialize_serial()
-
 
 #         # Fetch available final colors from BOMHeading table
 #         self.final_colors = self.fetch_final_colors()
@@ -271,7 +318,7 @@
 #             self.arduino = None
 
 #     def send_to_arduino(self, data):
-#         """Send data to Arduino via serial."""
+#         """Send data to Arduino via serial and wait for acknowledgment."""
 #         try:
 #             if self.arduino:
 #                 self.arduino.write(data.encode())  # Send data as bytes
@@ -411,10 +458,11 @@
 #                 return
 
 #             actual_values.append((base_color, percentage, actual_volume))  # Store details for later insertion
+
 #         # Send data to Arduino
 #         try:
 #             for base_color, percentage, actual_volume in actual_values:
-#                 arduino_command = f"{base_color}:{actual_volume}\n"  # Format: BaseColor:Volume
+#                 arduino_command = f"{self.COMMAND_PREFIX}:{base_color}:{actual_volume}\n"  # Format: C:BaseColor:Volume
 #                 response = self.send_to_arduino(arduino_command)
 #                 if response != "OK":  # Expect "OK" as Arduino acknowledgment
 #                     messagebox.showerror("Error", f"Arduino failed for {base_color}.")
@@ -423,7 +471,7 @@
 #             messagebox.showerror("Error", f"Error sending data to Arduino: {e}")
 #             return
 
-#         # Insert into DispensingHeading
+#         # # Insert into DispensingHeading
 #         try:
 #             cursor = self.db.connection.cursor()
 #             heading_query = """INSERT INTO DispensingHeading (FinalColor, BatchNo, Quantity, Date)
@@ -500,290 +548,6 @@
 #     # Ensure proper disconnection on close
 #     app.protocol("WM_DELETE_WINDOW", app.on_closing)
 #     app.mainloop()
-
-
-
-
-
-
-
-
-
-
-# version 1 - Jan6 16:47
-import serial
-import tkinter as tk
-from tkinter import ttk, messagebox
-from tkcalendar import DateEntry
-from datetime import datetime
-from mysql_connection import Database  # Ensure you have a Database class for MySQL connection
-import time
-
-class DispensingForm(tk.Toplevel):
-    COMMAND_PREFIX = 'C'  # Command prefix for dispensing
-
-    def __init__(self, master=None):
-        super().__init__(master)
-        self.title("Dispensing")
-        self.arduino_port = "/dev/ttyUSB0"  # Replace with your Arduino's COM port
-        self.baud_rate = 9600       # Match with Arduino's baud rate
-        self.arduino = None         # Placeholder for serial connection
-
-        # Initialize the Database instance
-        self.db = Database(host='localhost', user='minkhanttun', password='your_password', database='mkt')
-        if self.db.connect():  # Connect to the database
-            print("Database connected successfully.")
-        else:
-            print("Failed to connect to the database.")
-
-        self.initialize_serial()
-
-        # Fetch available final colors from BOMHeading table
-        self.final_colors = self.fetch_final_colors()
-
-        self.create_widgets()
-
-    def initialize_serial(self):
-        """Initialize serial communication with Arduino."""
-        try:
-            self.arduino = serial.Serial(self.arduino_port, self.baud_rate, timeout=2)
-            time.sleep(2)  # Wait for Arduino to reset
-            print("Serial connection established with Arduino.")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to connect to Arduino: {e}")
-            self.arduino = None
-
-    def send_to_arduino(self, data):
-        """Send data to Arduino via serial and wait for acknowledgment."""
-        try:
-            if self.arduino:
-                self.arduino.write(data.encode())  # Send data as bytes
-                time.sleep(0.5)  # Small delay for Arduino to process
-                response = self.arduino.readline().decode().strip()  # Read Arduino's response
-                print(f"Arduino response: {response}")
-                return response
-            else:
-                messagebox.showerror("Error", "Arduino is not connected.")
-                return None
-        except Exception as e:
-            messagebox.showerror("Error", f"Error communicating with Arduino: {e}")
-            return None
-
-    def create_widgets(self):
-        # Labels
-        self.final_color_label = tk.Label(self, text="Final Color")
-        self.final_color_label.grid(row=0, column=0, padx=5, pady=5)
-
-        self.batch_no_label = tk.Label(self, text="Batch No")
-        self.batch_no_label.grid(row=1, column=0, padx=5, pady=5)
-
-        self.date_label = tk.Label(self, text="Date")
-        self.date_label.grid(row=2, column=0, padx=5, pady=5)
-
-        self.quantity_label = tk.Label(self, text="Quantity")
-        self.quantity_label.grid(row=3, column=0, padx=5, pady=5)
-
-        # Combobox for selecting final color (from BOMHeading)
-        self.final_color_combobox = ttk.Combobox(self, values=self.final_colors)
-        self.final_color_combobox.grid(row=0, column=1, padx=5, pady=5)
-
-        # Entry for batch number
-        self.batch_no_entry = tk.Entry(self)
-        self.batch_no_entry.grid(row=1, column=1, padx=5, pady=5)
-
-        # DateEntry for date input
-        self.date_entry = DateEntry(self, date_pattern='yyyy-mm-dd')
-        self.date_entry.grid(row=2, column=1, padx=5, pady=5)
-
-        # Entry for quantity
-        self.quantity_entry = tk.Entry(self)
-        self.quantity_entry.grid(row=3, column=1, padx=5, pady=5)
-
-        # Buttons
-        self.dispense_button = ttk.Button(self, text="Dispense", command=self.dispense)
-        self.dispense_button.grid(row=4, column=0, padx=5, pady=10)
-
-        self.cancel_button = ttk.Button(self, text="Cancel", command=self.cancel)
-        self.cancel_button.grid(row=4, column=1, padx=5, pady=10)
-
-    def fetch_final_colors(self):
-        """Fetch available final colors from BOMHeading table."""
-        try:
-            cursor = self.db.connection.cursor()
-            cursor.execute("SELECT DISTINCT FinalColor FROM BOMHeading")
-            final_colors = [row[0] for row in cursor.fetchall()]  # Get all distinct final colors
-            return final_colors
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to fetch final colors: {e}")
-            return []
-        finally:
-            cursor.close()
-
-    def fetch_base_color_percentage(self, final_color):
-        """Fetch BaseColor and Percentage from BOMDetail for the selected FinalColor."""
-        try:
-            cursor = self.db.connection.cursor()
-            query = "SELECT BaseColor, Percentage FROM BOMDetail WHERE FinalColor = %s"
-            cursor.execute(query, (final_color,))
-            base_color_details = cursor.fetchall()  # Fetch all BaseColor and Percentage for the final color
-            return base_color_details
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to fetch base color details: {e}")
-            return []
-        finally:
-            cursor.close()
-
-    def fetch_available_stock(self, base_colors):
-        """Fetch available stock for the given base colors."""
-        stock_availability = {}
-        try:
-            cursor = self.db.connection.cursor()
-            for base_color in base_colors:
-                query = "SELECT Stock FROM ColorTable WHERE BaseColor = %s"
-                cursor.execute(query, (base_color,))
-                stock = cursor.fetchone()
-                if stock:
-                    stock_availability[base_color] = stock[0]  # Store available stock
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to fetch stock: {e}")
-        finally:
-            cursor.close()
-        return stock_availability
-
-    def dispense(self):
-        # Get data from entry fields
-        final_color = self.final_color_combobox.get()
-        batch_no = self.batch_no_entry.get()
-        date = self.date_entry.get()
-        quantity = self.quantity_entry.get()
-
-        # Validation
-        if not (final_color and batch_no and date and quantity):
-            messagebox.showerror("Error", "All fields are required!")
-            return
-
-        # Format the date using the custom format_date function
-        formatted_date = self.format_date(date)
-
-        if formatted_date is None:  # If date is invalid, stop the execution
-            return
-
-        # Fetch BaseColor and Percentage for the selected FinalColor from BOMDetail
-        base_color_details = self.fetch_base_color_percentage(final_color)
-        if not base_color_details:
-            messagebox.showerror("Error", f"No base color data found for {final_color}")
-            return
-
-        # Calculate total volume to dispense based on percentage
-        total_quantity = float(quantity)  # Convert quantity to float
-        actual_values = []  # To store actual values for each base color
-
-        # Check stock availability
-        base_colors = [base_color for base_color, _ in base_color_details]
-        stock_availability = self.fetch_available_stock(base_colors)
-
-        for base_color, percentage in base_color_details:
-            # Convert percentage to float before calculating
-            percentage = float(percentage)  # Ensure percentage is a float
-            # Calculate actual volume based on percentage
-            actual_volume = (total_quantity * percentage) / 100
-
-            # Check if sufficient stock is available
-            if base_color in stock_availability and stock_availability[base_color] < actual_volume:
-                messagebox.showerror("Error", f"Insufficient stock for {base_color}. Available: {stock_availability[base_color]}, Required: {actual_volume}")
-                return
-
-            actual_values.append((base_color, percentage, actual_volume))  # Store details for later insertion
-
-        # Send data to Arduino
-        try:
-            for base_color, percentage, actual_volume in actual_values:
-                arduino_command = f"{self.COMMAND_PREFIX}:{base_color}:{actual_volume}\n"  # Format: C:BaseColor:Volume
-                response = self.send_to_arduino(arduino_command)
-                if response != "OK":  # Expect "OK" as Arduino acknowledgment
-                    messagebox.showerror("Error", f"Arduino failed for {base_color}.")
-                    return
-        except Exception as e:
-            messagebox.showerror("Error", f"Error sending data to Arduino: {e}")
-            return
-
-        # # Insert into DispensingHeading
-        try:
-            cursor = self.db.connection.cursor()
-            heading_query = """INSERT INTO DispensingHeading (FinalColor, BatchNo, Quantity, Date)
-                               VALUES (%s, %s, %s, %s)"""
-            cursor.execute(heading_query, (final_color, batch_no, total_quantity, formatted_date))
-            heading_srno = cursor.lastrowid  # Get the auto-incremented SrNo for the heading entry
-            self.db.connection.commit()
-
-            # Insert into DispensingDetail
-            detail_query = """INSERT INTO DispensingDetail (FinalColor, BatchNo, BaseColor, Percentage, Actual, Date, DispensingHeadingID)
-                              VALUES (%s, %s, %s, %s, %s, %s, %s)"""
-
-            for base_color, percentage, actual in actual_values:
-                cursor.execute(detail_query, (final_color, batch_no, base_color, percentage, actual, formatted_date, heading_srno))
-
-            self.db.connection.commit()
-
-            # Deduct stock from ColorTable
-            self.deduct_stock(actual_values)
-
-            messagebox.showinfo("Success", "Data inserted and stock updated successfully.")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to insert data: {e}")
-            print("Failed to insert data:", e)
-        finally:
-            cursor.close()
-
-        self.clear_entries()  # Clear entry fields after submission
-
-    def deduct_stock(self, actual_values):
-        """Deduct stock from ColorTable based on the actual volumes dispensed."""
-        try:
-            cursor = self.db.connection.cursor()
-            for base_color, _, actual in actual_values:
-                update_query = "UPDATE ColorTable SET Stock = Stock - %s WHERE BaseColor = %s"
-                cursor.execute(update_query, (actual, base_color))
-            self.db.connection.commit()  # Commit the stock deduction
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to update stock: {e}")
-        finally:
-            cursor.close()
-
-    def format_date(self, date_string):
-        """Custom function to format the date into 'DD Month YYYY' format."""
-        try:
-            # Parse the date string assuming the input is 'yyyy-mm-dd'
-            date_object = datetime.strptime(date_string, "%Y-%m-%d")
-            # Format the date as 'DD Month YYYY'
-            formatted_date = date_object.strftime("%d %B %Y")
-            return formatted_date
-        except ValueError:
-            # Handle the case where the date format is not as expected
-            messagebox.showerror("Error", "Invalid date format")
-            return None
-
-    def clear_entries(self):
-        self.final_color_combobox.set('')  # Clear combobox selection
-        self.batch_no_entry.delete(0, tk.END)
-        self.quantity_entry.delete(0, tk.END)
-        self.date_entry.set_date(datetime.today())
-
-    def cancel(self):
-        self.destroy()
-
-    def on_closing(self):
-        self.db.disconnect()
-        self.destroy()
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    root.withdraw()  # Hide the main root window
-    app = DispensingForm(root)
-
-    # Ensure proper disconnection on close
-    app.protocol("WM_DELETE_WINDOW", app.on_closing)
-    app.mainloop()
 
 # In your dispensing.py (suggested additions)
 # import serial
