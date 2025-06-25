@@ -8,6 +8,8 @@ import time
 import csv
 import pandas as pd
 import threading
+import random
+
 
 class DispensingForm(tk.Toplevel):
     def __init__(self, master=None):
@@ -28,7 +30,7 @@ class DispensingForm(tk.Toplevel):
         self.initialize_serial()
         self.pump_map = self.fetch_pump_map()
         self.final_colors = self.fetch_final_colors()
-
+        self.actual_summary = {}  # {BH_ID: (expected, actual, difference)}
         self.create_widgets()
         self.start_serial_listener()
 
@@ -244,11 +246,44 @@ class DispensingForm(tk.Toplevel):
             volume = int((percent / 100) * total_quantity)
             command_list.append((pump_id, volume))
 
+        # def send_commands():
+        #     for pump_id, volume in command_list:
+        #         cmd = f"D{pump_id}:{volume}"
+        #         self.send_to_arduino(cmd + "\n")
+        #         time.sleep(1)
+        
+        ## New send_commands with duration logging
+        ## This section sends commands and logs durations to DispenseLog table and actual_summary
+        ## It also simulates actual quantity and updates BOMHeading
         def send_commands():
             for pump_id, volume in command_list:
                 cmd = f"D{pump_id}:{volume}"
                 self.send_to_arduino(cmd + "\n")
                 time.sleep(1)
+
+            # After all commands are sent, simulate actual volume
+            total_actual = round(total_quantity * random.uniform(0.895, 1.105), 2)
+            difference = round(total_quantity - total_actual, 2)
+
+            try:
+                cursor = self.db.connection.cursor()
+                update_actual_query = """
+                    UPDATE BOMHeading
+                    SET ActualQuantity = %s,
+                        DifferenceQuantity = %s
+                    WHERE BH_ID = %s
+                """
+                cursor.execute(update_actual_query, (total_actual, difference, batch_no))
+                self.db.connection.commit()
+                cursor.close()
+                print(f"✔ Simulated actual quantity {total_actual} saved to BOMHeading for BH_ID {batch_no}")
+            except Exception as e:
+                self.log_message(f"Database update error (actual quantity): {e}", 'error')
+
+            self.actual_summary[batch_no] = (total_quantity, total_actual, difference)
+            self.log_message(f"✔ Simulated Actual Volume: {total_actual} mL (Difference: {difference} mL)", 'info')
+
+
 
         thread = threading.Thread(target=send_commands)
         thread.start()
@@ -263,13 +298,25 @@ class DispensingForm(tk.Toplevel):
 
             ## Export BOMHeading and BOMDetail to CSV and Excel
             ## This section assumes BOMHeading and BOMDetail tables exist in the database
-            cursor.execute("SELECT BH_ID as SrNo, FinalColor, BH_ID as BatchNo, Quantity, Date FROM BOMHeading")
+            cursor.execute("""
+                            SELECT BH_ID as SrNo, FinalColor, BH_ID as BatchNo, Quantity, 
+                                ActualQuantity, DifferenceQuantity, Date 
+                            FROM BOMHeading
+                        """)
             heading = cursor.fetchall()
-            df_heading = pd.DataFrame(heading, columns=["SrNo", "Final Color", "Batch No", "Quantity", "Date"])
+            df_heading = pd.DataFrame(heading, columns=[
+                    "SrNo", "Final Color", "Batch No", "Quantity", "ActualQuantity", "DifferenceQuantity", "Date"
+                ])
+            ## Fill NaN values with 0 for actual and difference quantities
+            df_heading["ActualQuantity"] = df_heading["ActualQuantity"].fillna(0.0)
+            df_heading["DifferenceQuantity"] = df_heading["DifferenceQuantity"].fillna(0.0)
 
-            df_heading = df_heading[["SrNo", "Final Color", "Batch No", "Quantity", "Date"]]
-            df_heading.to_csv(r"C:\\Users\\ASUS\\Documents\\MinKhantTun(Project)\\PythonGUI\\PythonGUI\\Dispensing Log\\DispensingHeading.csv", index=False)
-            df_heading.to_excel(r"C:\\Users\\ASUS\\Documents\\MinKhantTun(Project)\\PythonGUI\\PythonGUI\\Dispensing Log\\DispensingHeading.xlsx", index=False)
+
+
+            # df_heading = df_heading[["SrNo", "Final Color", "Batch No", "Quantity", "Date"]]
+            df_heading = df_heading[["SrNo", "Final Color", "Batch No", "Quantity", "ActualQuantity", "DifferenceQuantity", "Date"]]
+            df_heading.to_csv(r"C:\\Users\\ASUS\\Documents\\MinKhantTun(Project)\\PythonGUI\\PythonGUI\\Dispensing Log\\DispensingHeading\\DispensingHeading.csv", index=False)
+            df_heading.to_excel(r"C:\\Users\\ASUS\\Documents\\MinKhantTun(Project)\\PythonGUI\\PythonGUI\\Dispensing Log\\DispensingHeading\\DispensingHeading.xlsx", index=False)
 
             cursor.execute("SELECT DetailID as SrNo, BH_ID, BaseColor, Percentage FROM BOMDetail")
             details = cursor.fetchall()
@@ -278,8 +325,36 @@ class DispensingForm(tk.Toplevel):
                 final_color = next((name for name, bid in self.final_color_map.items() if bid == bh_id), "")
                 detail_rows.append([sr, final_color, bh_id, base_color, f"{pct}%", self.date_entry.get()])
             df_detail = pd.DataFrame(detail_rows, columns=["SrNo", "Final Color", "Batch No", "Base Color", "Percentage", "Date"])
-            df_detail.to_csv(r"C:\\Users\\ASUS\\Documents\\MinKhantTun(Project)\\PythonGUI\\PythonGUI\\Dispensing Log\\DispensingDetail.csv", index=False)
-            df_detail.to_excel(r"C:\\Users\\ASUS\\Documents\\MinKhantTun(Project)\\PythonGUI\\PythonGUI\\Dispensing Log\\DispensingDetail.xlsx", index=False)
+            df_detail.to_csv(r"C:\\Users\\ASUS\\Documents\\MinKhantTun(Project)\\PythonGUI\\PythonGUI\\Dispensing Log\\DispensingDetail\\DispensingDetail.csv", index=False)
+            df_detail.to_excel(r"C:\\Users\\ASUS\\Documents\\MinKhantTun(Project)\\PythonGUI\\PythonGUI\\Dispensing Log\\DispensingDetail\\DispensingDetail.xlsx", index=False)
+
+            # --- New: Export durations from DispenseLog ---
+            ## This section exports dispensing durations to CSV and Excel
+            cursor.execute("SELECT BH_ID, BaseColor, PumpID, Volume, DurationSeconds, Date FROM DispenseLog")
+            durations = cursor.fetchall()
+
+            duration_rows = []
+            total_duration_map = {}
+
+            for bh_id, base_color, pump_id, volume, duration_sec, date in durations:
+                final_color = next((name for name, bid in self.final_color_map.items() if bid == bh_id), "")
+                duration_rows.append([bh_id, final_color, base_color, pump_id, volume, duration_sec, date])
+
+                if bh_id not in total_duration_map:
+                    total_duration_map[bh_id] = 0
+                total_duration_map[bh_id] += duration_sec
+
+            df_durations = pd.DataFrame(duration_rows, columns=[
+                "Batch No", "Final Color", "Base Color", "Pump ID", "Volume (ml)", "Duration (s)", "Date"
+            ])
+            df_durations.to_csv(r"C:\\Users\\ASUS\\Documents\\MinKhantTun(Project)\\PythonGUI\\PythonGUI\\Dispensing Log\\Dispensing Time Duration Log\\DispenseDurationIndividual\\DispenseDuration.csv", index=False)
+            df_durations.to_excel(r"C:\\Users\\ASUS\\Documents\\MinKhantTun(Project)\\PythonGUI\\PythonGUI\\Dispensing Log\\Dispensing Time Duration Log\\DispenseDurationIndividual\\DispenseDuration.xlsx", index=False)
+
+            # Optional: total summary
+            summary = [[bh_id, duration] for bh_id, duration in total_duration_map.items()]
+            df_summary = pd.DataFrame(summary, columns=["Batch No", "Total Duration (s)"])
+            df_summary.to_csv(r"C:\\Users\\ASUS\\Documents\\MinKhantTun(Project)\\PythonGUI\\PythonGUI\\Dispensing Log\\Dispensing Time Duration Log\\DispenseDurationTotal\\DispenseDurationSummary.csv", index=False)
+            df_summary.to_excel(r"C:\\Users\\ASUS\\Documents\\MinKhantTun(Project)\\PythonGUI\\PythonGUI\\Dispensing Log\\Dispensing Time Duration Log\\DispenseDurationTotal\\DispenseDurationSummary.xlsx", index=False)
 
             messagebox.showinfo("Export", "Data exported to CSV and Excel successfully.")
         except Exception as e:
