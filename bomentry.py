@@ -79,6 +79,32 @@ class BomEntryForm(tk.Toplevel):
             messagebox.showinfo("Export", f"BOM list exported to {file_path}")
         except Exception as e:
             messagebox.showerror("Export Error", str(e))
+    # Adding the delete_bom method to handle BOM deletion
+    # This method will prompt for confirmation and delete the BOM from both BOMDetail and BOMHeading tables.
+    def delete_bom(self, bh_id):
+        if not bh_id:
+            messagebox.showwarning("Missing ID", "No BOM ID provided to delete.")
+            return
+
+        confirm = messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete BOM '{bh_id}'?")
+        if not confirm:
+            return
+
+        try:
+            cursor = self.db.cursor()
+            cursor.execute("DELETE FROM BOMDetail WHERE BH_ID=%s", (bh_id,))
+            cursor.execute("DELETE FROM BOMHeading WHERE BH_ID=%s", (bh_id,))
+            self.db.commit()
+            messagebox.showinfo("Deleted", f"BOM '{bh_id}' deleted successfully.")
+            self.load_all_boms()
+            self.clear_edit_tab()
+        except Error as e:
+            self.db.rollback()
+            messagebox.showerror("Database Error", f"Failed to delete BOM: {e}")
+        finally:
+            if cursor:
+                cursor.close()
+
 
 # Adding the add_base_color method to handle adding base colors
 # Adding insert data method to handle inserting BOM data
@@ -411,7 +437,11 @@ class BomEntryForm(tk.Toplevel):
         export_excel_btn = ttk.Button(export_frame, text="Export Excel", command=self.export_bom_to_excel)
         export_excel_btn.pack(side=tk.LEFT, padx=5)
 
-        
+        ## Adding Delete Button
+        # Delete button for view tab
+        delete_btn = ttk.Button(self.view_tab, text="Delete Selected BOM", command=self.delete_selected_bom)
+        delete_btn.pack(pady=5)
+
         # BOMs Treeview
         tree_frame = ttk.Frame(self.view_tab)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
@@ -614,7 +644,8 @@ class BomEntryForm(tk.Toplevel):
             if cursor:
                 cursor.close()
 
-
+##    # Adding the edit_selected_bom method to handle double-clicking a BOM in the view tab
+#    # This method will load the selected BOM's data into the edit tab for modification.
     def edit_selected_bom(self, event):
         selected_item = self.boms_tree.selection()
         if not selected_item:
@@ -625,6 +656,16 @@ class BomEntryForm(tk.Toplevel):
         self.id_entry.delete(0, tk.END)
         self.id_entry.insert(0, bh_id)
         self.load_data_for_edit()
+
+    # 🔽 ADD THIS RIGHT AFTER
+    def delete_selected_bom(self):
+        selected_item = self.boms_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("Select BOM", "Please select a BOM to delete.")
+            return
+
+        bh_id = self.boms_tree.item(selected_item)['values'][0]
+        self.delete_bom(bh_id)
 
 
 if __name__ == "__main__":
