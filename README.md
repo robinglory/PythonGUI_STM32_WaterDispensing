@@ -9,6 +9,7 @@
 * [Project Overview](#project-overview)
 * [Features](#features)
 * [Technology Stack](#technology-stack)
+* [Prototype Demo Videos](#prototype-demo-videos) 
 * [Installation](#installation)
 * [Database Setup](#database-setup)
 * [Usage](#usage)
@@ -63,6 +64,15 @@ This desktop application is tailored for paint dispensing workflows where color 
 * **Serial communication** via `pyserial` (connects to STM32 firmware)
 * **random** module to simulate slight variance in actual dispensed volume
 
+---
+## Prototype Demo Videos 
+---
+| Feature | Preview | Watch |
+|--------|---------|-------|
+| **1. Color Entry** | [![Color Entry](https://img.youtube.com/vi/_TqE4AjzLSA/0.jpg)](https://youtu.be/_TqE4AjzLSA) | [Watch Video](https://youtu.be/_TqE4AjzLSA) |
+| **2. BOM Entry**   | [![BOM Entry](https://img.youtube.com/vi/PpaTtH__2nQ/0.jpg)](https://youtu.be/PpaTtH__2nQ) | [Watch Video](https://youtu.be/PpaTtH__2nQ) |
+| **3. Stock Entry** | [![Stock Entry](https://img.youtube.com/vi/aDptstXETww/0.jpg)](https://youtu.be/aDptstXETww) | [Watch Video](https://youtu.be/aDptstXETww) |
+| **4. Dispensing System** | [![Dispensing](https://img.youtube.com/vi/LA_uo2wr364/0.jpg)](https://youtu.be/LA_uo2wr364) | [Watch Video](https://youtu.be/LA_uo2wr364) |
 ---
 
 ## Installation
