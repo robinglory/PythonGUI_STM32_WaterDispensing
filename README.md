@@ -1,6 +1,12 @@
 # Color Dispensing Control Panel
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![Demo Video](https://img.shields.io/badge/demo-youtube-red)](https://youtu.be/LA_uo2wr364)
 
 🧪 **Color Dispensing Control Panel** is a modern Python GUI application designed to manage paint color dispensing operations. It integrates smoothly with an STM32-based pump control system and MySQL database for robust, precise, and user-friendly color dispensing, stock management, and bill of materials (BOM) handling.
+A fully integrated desktop GUI for managing color dispensing, stock tracking, and calibration in automated liquid systems. Built with Python and connected to STM32 firmware via serial communication, this app supports real-world manufacturing workflows with robust MySQL integration.
+
+
 
 ---
 
